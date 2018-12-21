@@ -6,12 +6,12 @@
 #    By: aollivie <aollivie@student.42.fr>          +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2014/11/14 17:07:06 by aollivie          #+#    #+#              #
-#    Updated: 2018/12/20 04:09:14 by alex             ###   ########.fr        #
+#    Updated: 2018/12/21 03:13:45 by alex             ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
 
-DEBUG=yes
+DEBUG=no
 CC=clang
 
 ifeq ($(DEBUG), yes)
@@ -20,9 +20,7 @@ else
 		CFLAGS=  -Wall -Wextra -Werror
 endif
 
-NAME_PING = ft_ping
-
-# NAME_CLIENT = client
+NAME_TRACEROUTE = ft_traceroute
 
 LIBFT =libft/libft.a
 
@@ -38,23 +36,18 @@ O_DIR= obj
 
 MKDIR = mkdir
 
-TRACEROUTE_SRC = test.c
+TRACEROUTE_SRC = main.c display.c socket.c loop.c receve.c
 
-# TRACEROUTE_SRC = main.c packet.c check.c display.c send.c receve.c init.c tool.c
-# PING_SRC = create_client.c main.c get_addr.c
+VPATH= src
 
-# VPATH= .:src:src/ping
-# VPATH= .:src:src/new
-VPATH= .
 
-# OBJS= $(PING_SRC:%.c=$(O_DIR)/%.o)
 OBJS= $(TRACEROUTE_SRC:%.c=$(O_DIR)/%.o)
 
 .PHONY : all clean fclean re
 
 all :
 	make -C libft
-	make -j $(NAME_PING)
+	make -j $(NAME_TRACEROUTE)
 
 
 ifeq ($(DEBUG),yes)
@@ -63,7 +56,7 @@ else
 				@echo "Generation mode release"
 endif
 
-$(NAME_PING):$(OBJS)
+$(NAME_TRACEROUTE):$(OBJS)
 				$(CC) $(CFLAGS) $(I_DIR) $^ $(LIBFT) -o $@
 
 $(O_DIR)/%.o: %.c
@@ -78,7 +71,7 @@ clean :
 		make clean -C libft
 
 fclean : clean
-		@rm -rf $(NAME_PING)
+		@rm -rf $(NAME_TRACEROUTE)
 		make fclean -C libft
 
 re : fclean all

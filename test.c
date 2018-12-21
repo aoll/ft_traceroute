@@ -19,20 +19,18 @@
 # include <netinet/in.h>
 # include <netinet/ip_icmp.h>
 # include <netinet/tcp.h>
+# include <netinet/udp.h>
 # include <sys/time.h>
+# include "libft.h"
 
 # define PORT 33434
 # define BUFSIZE 1024
 # define MAX_TTL 30
 # define NB_PACKET_BY_HOP 3
-# define NB_PACKET_SEND 16
+# define NB_PACKET_SEND 3
 # define MAX_DELAY 5
+# define SIZE_PACKET_SEND 60
 
-typedef struct	s_msg
-{
-	int seq;
-	int ttl;
-}				t_msg;
 
 int	init_fd_receve(void)
 {
@@ -42,15 +40,6 @@ int	init_fd_receve(void)
 		perror("cannot create socket\n");
 		exit (1);
 	}
-	// int optval = 1;
-    // setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
-	//
-	// const int val = BUFSIZE;
-	// if (setsockopt(fd, SOL_IP, SO_RCVBUF, &val, sizeof(val)) != 0)
-	// {
-	// 	printf("%s\n", "ERROR");
-	// 	exit(EXIT_FAILURE);
-	// }
 	return (fd);
 }
 
@@ -65,13 +54,68 @@ int init_fd_send(void)
 	return fd;
 }
 
+int	display(char *buf, struct sockaddr_in *remaddr,
+	struct timeval *t_time_receve,
+	struct timeval *t_time_start, int is_displayed_addr)
+{
+	struct icmphdr *icmp;
+	icmp = (struct icmphdr *)((void *)buf + sizeof(struct ip));
+	struct ip *iph = (struct ip *)buf;
+	if (!is_displayed_addr)
+	{
+		printf(" %s",inet_ntoa(remaddr->sin_addr));
+	}
+
+	double			time_echo_u;
+	time_echo_u = ((1000000 * t_time_receve->tv_sec + t_time_receve->tv_usec)
+		- (1000000 * t_time_start->tv_sec + t_time_start->tv_usec)) ;
+	printf("  %0.003f ms", time_echo_u / 1000);
+	return (EXIT_SUCCESS);
+}
+
+int	is_diff_addr(struct sockaddr_in remaddr[], int index)
+{
+	int is_displayed;
+	int tmp;
+
+	is_displayed = 0;
+	tmp = 0;
+	while (tmp < index)
+	{
+		if (remaddr[index].sin_addr.s_addr == remaddr[tmp].sin_addr.s_addr)
+		{
+			is_displayed++;
+		}
+		tmp++;
+	}
+	return (is_displayed);
+}
+
+int	display_hop(char buf[NB_PACKET_BY_HOP][BUFSIZE],
+	struct sockaddr_in *remaddr,
+	struct timeval *t_time_receve,
+	struct timeval *t_time_start)
+{
+	int	i;
+
+	i = 0;
+	while (i < NB_PACKET_BY_HOP)
+	{
+		display(buf[i], &remaddr[i], &t_time_receve[i] ,t_time_start, is_diff_addr(remaddr, i));
+		i++;
+	}
+	printf("\n");
+	return (0);
+}
+
 int	receve(int fd)
 {
-	struct sockaddr_in myaddr;      /* our address */
-	struct sockaddr_in remaddr;     /* remote address */
+	struct sockaddr_in remaddr[NB_PACKET_BY_HOP];     /* remote address */
 	socklen_t addrlen = sizeof(remaddr);	    /* length of addresses */
 	int recvlen;	    /* # bytes received */
-	unsigned char buf[BUFSIZE];     /* receive buffer */
+	char buf[NB_PACKET_BY_HOP][BUFSIZE];     /* receive buffer */
+
+	struct timeval	t_time_receve[NB_PACKET_BY_HOP];
 
 	struct timeval	t_time_start;
 	struct timeval	t_time_now;
@@ -81,75 +125,41 @@ int	receve(int fd)
 	int size_min_pckt = sizeof(struct icmphdr) + sizeof(struct ip);
 	int is_finish = 0;
 	int received_packet = 0;
-	t_msg *msg;
 
 
+
+	bzero(buf, BUFSIZE);
     while (42)
 	{
 		gettimeofday(&t_time_now, NULL);
 		if (t_time_now.tv_sec >= t_time_start.tv_sec + MAX_DELAY && !is_finish)
 		{
-			printf("%s received_packet: %d\n", "* * *", received_packet);
+			printf(" %s\n", "* * *");
 			return (1);
 		}
-		// recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
-		bzero(buf, BUFSIZE);
-		recvlen = recvfrom(fd, buf, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&remaddr, &addrlen);
+		recvlen = recvfrom(fd, buf[received_packet], BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&remaddr[received_packet], &addrlen);
 		if (recvlen > size_min_pckt )
 		{
-			printf("recvlen : %d ", recvlen);
-			buf[recvlen] = 0;
-			icmp = (struct icmphdr *)((void *)buf + sizeof(struct ip));
-			struct ip *iph = (struct ip *)buf;
-			// if (recvlen == 84)
-			// {
-			// 	write(1, buf + 8 + sizeof(struct ip) + sizeof(struct icmphdr) , recvlen - sizeof(struct ip) + sizeof(struct icmphdr) - 8);
-			// }
-			// else if (recvlen == 56)
-			// {
-			// 	write(1, buf + 8, 28);
-			// }
-			write(1, buf + 56, recvlen);
-			msg = (void *)buf + 56;
-			// msg = (void *)buf + (sizeof(struct ip) + sizeof(struct icmphdr));
-			printf("ttl: %d, seq: %d, addr: %s, type: %d, code: %d\n",
-				// msg->ttl, msg->seq,
-				iph->ip_ttl,
-				icmp->un.echo.sequence,
-				inet_ntoa(remaddr.sin_addr), icmp->type, icmp->code);
-			// if ((int)icmp->type == 3 &&  (int)icmp->code == 3)
+			gettimeofday(&t_time_receve[received_packet], NULL);
+			buf[received_packet][recvlen] = 0;
+			icmp = (struct icmphdr *)((void *)buf[received_packet] + sizeof(struct ip));
+			struct ip *iph = (struct ip *)buf[received_packet];
 			if (icmp->type == ICMP_DEST_UNREACH &&  icmp->code == ICMP_PORT_UNREACH)
 			{
-				// printf("%s\n", "END !!!!!!");
 				is_finish++;
-				if (is_finish >= NB_PACKET_BY_HOP)
-				{
-					exit(1);
-				}
 			}
 			received_packet++;
-			bzero(buf, BUFSIZE);
 		}
-		else if (recvlen > 0)
+		if (received_packet >= NB_PACKET_BY_HOP)
 		{
-			printf("%s %d\n", "! EXIT !", recvlen);
-			exit(1);
+			display_hop(buf, remaddr, t_time_receve,  &t_time_start);
+			if (is_finish)
+			{
+				exit(1);
+			}
+			return (0);
 		}
-		// if (received_packet >= NB_PACKET_BY_HOP)
-		// {
-		// 	// printf("%s\n", "received_packet >= NB_PACKET_BY_HOP !!!!!!");
-		// 	if (is_finish)
-		// 	{
-		// 		exit(1);
-		// 	}
-		// 	return (0);
-		// }
 	}
-	if (is_finish)
-	{
-		exit(1);
-	}
-        /* never exits */
 	return (0);
 }
 
@@ -163,16 +173,6 @@ int			set_ttl(int fd, int ttl)
 		printf("%s\n", "ERROR");
 		exit(1);
 	}
-	int so_broadcast = 1;
-
-	int z = setsockopt(fd,
-    	SOL_SOCKET,
-    	SO_BROADCAST,
-    	&so_broadcast,
-    	sizeof so_broadcast);
-
-	if ( z )
-    	perror("setsockopt(2)");
 	return (0);
 }
 
@@ -183,12 +183,9 @@ int	loop(int fd_receve, struct sockaddr_in *servaddr)
 	int ttl = 1;
 	int sended_packet_by_hop;
 	int sended_packet;
-	char s[28];
+	char buf[SIZE_PACKET_SEND];
 	int fd;
-	t_msg msg;
-	// int
-// NB_PACKET_SEND
-	/* send a message to the server */
+
 	sended_packet_by_hop = 0;
 	while (ttl <= MAX_TTL)
 	{
@@ -203,47 +200,30 @@ int	loop(int fd_receve, struct sockaddr_in *servaddr)
 			}
 			while (sended_packet_by_hop < NB_PACKET_BY_HOP && sended_packet < NB_PACKET_SEND)
 			{
-				bzero(s, 28);
+				bzero(buf, SIZE_PACKET_SEND);
 				fd = init_fd_send();
 				set_ttl(fd, ttl);
-				msg.ttl = ttl;
-				msg.seq = sended_packet_by_hop;
-				// memcpy(s, "hello world!", strlen("hello world!"));
-				memcpy(s, &msg, sizeof(t_msg));
-				// t_msg *test;
-				// test = (void *)s;
-				// printf("test ttl: %d, seq: %d\n", test->ttl, test->seq);
-				if ((send = sendto(fd, s, 28, 0, (struct sockaddr *)servaddr, sizeof(struct sockaddr))) < 0) {
+
+				if ((send = sendto(fd, buf, SIZE_PACKET_SEND, 0, (struct sockaddr *)servaddr, sizeof(struct sockaddr))) < 0) {
 					perror("sendto failed");
 					return 0;
 				}
 				close(fd);
 				sended_packet_by_hop++;
 				sended_packet++;
-				// sleep(1);
 			}
-			// ttl++;
 		}
+		printf(" %s%d ", ((ttl < 10) ? " " : ""), ttl );
 		receve(fd_receve);
-		// printf("sended_packet_by_hop : %d  ", sended_packet_by_hop);
-		// printf("%s%d  ", ttl<10?" ":"", ttl);
 	}
 	return (0);
 }
 
 int main(int argc, char const **av) {
-	/* code */
-	// int fd = init_fd_send();
 	int fd_receve = init_fd_receve();
-
-
-
-	// set_ttl(fd, 3);
-
 
 	struct hostent *hp;     /* host information */
 	struct sockaddr_in servaddr;    /* server address */
-	char *my_message = "this is a trace route message";
 
 	/* fill in the server's address and data */
 	memset((char*)&servaddr, 0, sizeof(servaddr));
@@ -259,18 +239,9 @@ int main(int argc, char const **av) {
 
 	/* put the host's address into the server address structure */
 	memcpy((void *)&servaddr.sin_addr, hp->h_addr_list[0], hp->h_length);
-
-
+	printf("traceroute to %s (%s), %d hops max, %d byte packets\n",
+		av[1], "42.42.42.42", MAX_TTL, SIZE_PACKET_SEND);
 	loop(fd_receve, &servaddr);
-	// int send;
-	// /* send a message to the server */
-	// if ((send = sendto(fd, my_message, strlen(my_message), 0, (struct sockaddr *)&servaddr, sizeof(servaddr))) < 0) {
-	// 	perror("sendto failed");
-	// 	return 0;
-	// }
-	// printf("send : %d\n", send);
-	//
-	// receve(fd_receve);
 
 	return 0;
 }
